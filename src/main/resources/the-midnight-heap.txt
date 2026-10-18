@@ -1,0 +1,113 @@
+THE MIDNIGHT HEAP
+A short story about a Java bug, a Diwali sale, and a missing hashCode()
+
+Chapter 1: The Alert
+
+At 11:42 PM on the first night of the Diwali sale, Meera Iyer's phone buzzed on her desk in Koramangala. She was a backend developer at Kirana Express, a Bengaluru grocery delivery startup, and she had been at the company for exactly fourteen months.
+
+The alert said: "order-pricing-service: pod restarted (OOMKilled)."
+
+She sighed. The order-pricing-service was a Spring Boot 3.2 application running on Java 21. It calculated the final price of every order after applying coupons, delivery fees and sale discounts. During normal days it handled about 300 requests per second. Tonight it was handling close to 2,100.
+
+Meera opened the dashboard. The service had six pods, each with a 4 GB heap. One by one, each pod was climbing to the top of its memory limit and getting killed by Kubernetes. A pod lasted about 47 minutes before it died, then a fresh one started and the cycle repeated.
+
+She called Arjun Rao, the senior engineer on the team. Arjun had written Java since the days of Java 6, and everyone called him "the heap whisperer" because he could read a heap dump the way other people read a newspaper.
+
+"Is it Kafka again?" Arjun asked, still half asleep.
+
+Chapter 2: The Red Herring
+
+It was a fair guess. Two weeks earlier, a Kafka consumer in the inventory-service had fallen behind and caused a similar-looking outage. The pricing service also consumed a Kafka topic called coupon.updated, which sent a message every time the marketing team changed a coupon.
+
+Meera checked. The consumer lag on coupon.updated was only 12 messages. Nothing unusual.
+
+"It's not Kafka," she said. "The lag is fine. Memory just keeps growing, slowly and steadily, like water filling a bucket."
+
+"Steady growth means something is holding on to objects," Arjun said. "Take a heap dump before the next pod dies. Use jcmd, not the dashboard button. The button times out on big heaps."
+
+Meera connected to the oldest living pod and ran:
+
+    jcmd 1 GC.heap_dump /tmp/pricing.hprof
+
+The file was 3.6 GB. She copied it to her laptop and opened it in Eclipse MAT (Memory Analyzer Tool).
+
+Chapter 3: What the Heap Said
+
+The leak suspects report pointed at a single object: a ConcurrentHashMap held by a class called DiscountCache. That one map retained 2.9 GB of memory and contained about 1.8 million entries.
+
+Meera frowned. DiscountCache was supposed to be tiny. There were only around 40 active coupons during the sale, and the cache stored the computed discount for each combination of coupon and customer tier. Customer tiers were GOLD, SILVER and REGULAR. So the map should hold at most 120 entries.
+
+She opened the code. The cache key was a class written three years ago by a developer who had since left:
+
+    public class DiscountKey {
+        private final String couponCode;
+        private final String customerTier;
+
+        public DiscountKey(String couponCode, String customerTier) {
+            this.couponCode = couponCode;
+            this.customerTier = customerTier;
+        }
+    }
+
+And the cache lookup looked like this:
+
+    DiscountKey key = new DiscountKey(coupon, tier);
+    return cache.computeIfAbsent(key, k -> calculateDiscount(coupon, tier));
+
+Meera stared at the class for a full minute before she saw it.
+
+"Arjun," she said. "DiscountKey doesn't override equals() or hashCode()."
+
+There was a pause on the call. Then Arjun laughed, the tired laugh of someone who had seen this exact bug many times before.
+
+Chapter 4: Why It Leaked
+
+Arjun explained it the way he explained everything, slowly and with an analogy.
+
+"Without equals() and hashCode(), Java uses the default ones from Object. The default hashCode is based on object identity, not on the values inside. So every time you create new DiscountKey("DIWALI50", "GOLD"), Java treats it as a brand new key, even if an identical one is already in the map. The map never finds a match. It just keeps adding. Every request adds one more entry, and nothing ever gets removed."
+
+"So the cache was never a cache," Meera said. "It was a very expensive list."
+
+"Exactly. On normal days with 300 requests per second, it grew slowly, and our weekly deployments restarted the pods before anyone noticed. The Diwali sale made it seven times faster, so it finally hit the ceiling."
+
+Meera did the math. At 2,100 requests per second, roughly a third of them used a coupon, so about 700 new entries per second. In 47 minutes that came to nearly 2 million entries. It matched the heap dump almost perfectly.
+
+Chapter 5: The Fix
+
+They agreed on two changes.
+
+First, Meera replaced the class with a Java record, because records generate equals(), hashCode() and toString() automatically from their fields:
+
+    public record DiscountKey(String couponCode, String customerTier) {}
+
+Second, Arjun insisted that a cache must always have a limit, even when the keys are correct. "A correct cache without a size limit is just a slower memory leak," he said. They replaced the ConcurrentHashMap with a Caffeine cache:
+
+    Cache<DiscountKey, BigDecimal> cache = Caffeine.newBuilder()
+            .maximumSize(10_000)
+            .expireAfterWrite(Duration.ofMinutes(15))
+            .recordStats()
+            .build();
+
+The 15-minute expiry also solved a quieter problem: when marketing changed a coupon, the old discount would now disappear from the cache on its own, instead of relying only on the coupon.updated Kafka message.
+
+Meera wrote a unit test with JUnit 5 that created two DiscountKey objects with the same values and asserted that they were equal and had the same hash code. Arjun reviewed the pull request at 1:58 AM. The fix was deployed at 2:13 AM as version 4.7.1 of the order-pricing-service.
+
+Chapter 6: The Morning After
+
+By 6:00 AM, memory on all six pods was flat at around 900 MB. Not a single pod had restarted. The cache stats showed a hit rate of 99.4 percent, which meant the service was now also faster: the average response time dropped from 180 milliseconds to 35 milliseconds.
+
+The incident was logged as INC-2291. In the postmortem, the team added three rules to their code review checklist:
+
+1. Any class used as a key in a Map or an element in a Set must override equals() and hashCode(), or be a record.
+2. Every in-memory cache must have a maximum size and an expiry time.
+3. Every service must expose heap usage and cache size as metrics, so steady growth is visible before it becomes an outage.
+
+Meera's manager, Farhan Sheikh, asked her to present the incident at the company's monthly engineering talk. She titled it "The Cache That Was Never a Cache."
+
+Arjun sent her a message after the talk: "Fourteen months in and you found a three-year-old bug at midnight during the biggest sale of the year. Next time, though, let's find it on a Tuesday afternoon."
+
+Meera laughed and added a fourth line to the checklist, in smaller font:
+
+4. Run a load test at sale-level traffic before the sale, not during it.
+
+THE END

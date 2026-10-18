@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.langchain4jexamples</groupId>
+    <artifactId>GenAIUsingLangChain4j</artifactId>
+    <version>1.0.0</version>
+    <name>genai-langchain4j</name>
+    <description>A standalone Core Java reference project demonstrating
+        GenAI integration using LangChain4j. Covers zero-framework implementations of declarative AI services
+        (AiServices),
+        Retrieval-Augmented Generation (RAG) with in-memory vector stores, conversational chat memory,
+        and autonomous function calling with tools.
+    </description>
+
+    <properties>
+        <java.version>25</java.version>
+        <langchain4j.version>1.22.0</langchain4j.version>
+        <lombok.version>1.18.34</lombok.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-google-ai-gemini</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.13</version>
+        </dependency>
+    </dependencies>
+</project>
