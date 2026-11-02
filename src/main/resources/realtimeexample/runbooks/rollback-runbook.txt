@@ -1,0 +1,9 @@
+RUNBOOK: Rolling back a release
+
+When to roll back: the incident started within a few hours of a deployment and the change is a plausible cause. Roll back first and investigate after; a working previous version beats a fix written under pressure.
+
+Who approves: the on-call engineer must approve every rollback. Automation may propose a rollback but must never execute one without that approval.
+
+How: roll back to the version immediately before the suspect release, as listed in the deployment history. Never skip more than one version without checking database migrations, because Liquibase changesets are not rolled back automatically.
+
+After the rollback: watch pod readiness, heap usage and error rate for 15 minutes. Post a status update when the service is stable. Open a postmortem ticket that links the incident and the suspect release.

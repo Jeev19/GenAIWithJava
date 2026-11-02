@@ -1,0 +1,23 @@
+ID: INC-3877
+SERVICE: cart-service
+SYMPTOMS: heap grew steadily for two hours after a release, pods OOMKilled one by one, cache hit rate near zero
+ROOT CAUSE: new SessionKey class used as a HashMap key had no equals() and hashCode(), so every lookup missed and the cache grew without bound
+FIX: rolled back, added equals() and hashCode() to the key (a Java record), replaced the HashMap with a size-bounded Caffeine cache
+
+ID: INC-3902
+SERVICE: payment-service
+SYMPTOMS: payment gateway returning 502 and 504, retries piling up, checkout slow
+ROOT CAUSE: payment provider outage on their side
+FIX: circuit breaker opened, switched traffic to the backup gateway, no code change
+
+ID: INC-3955
+SERVICE: order-service
+SYMPTOMS: requests hanging, HikariCP connection pool exhausted, database CPU normal
+ROOT CAUSE: a new report query ran inside a transaction that held connections for minutes
+FIX: moved the report to a read replica and added a query timeout
+
+ID: INC-4010
+SERVICE: notification-service
+SYMPTOMS: Kafka consumer lag growing to millions, notifications delayed by an hour
+ROOT CAUSE: a poison message made the consumer retry forever on one partition
+FIX: added a dead letter topic and skipped the bad offset

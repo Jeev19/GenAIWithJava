@@ -1,0 +1,13 @@
+RUNBOOK: JVM out of memory and OOMKilled pods
+
+Applies when: pods restart with reason OOMKilled, logs show java.lang.OutOfMemoryError, or heap usage stays above 90 percent.
+
+Step 1. Confirm it is heap and not native memory. java.lang.OutOfMemoryError: Java heap space means the heap is full. OOMKilled without an OutOfMemoryError in the logs usually means native memory or the container limit is too close to -Xmx.
+
+Step 2. Check what changed. Compare the time memory started climbing with recent deployments. A release in the last few hours is the most likely cause.
+
+Step 3. Look for unbounded collections. Caches built on HashMap or ConcurrentHashMap without size limits or eviction are the most common cause. A cache whose hit ratio is very low while its size keeps growing means entries are never matched. Check that the cache key class implements both equals() and hashCode(); without them every lookup misses and every put adds a new entry.
+
+Step 4. Mitigate before you debug. If a recent release is the likely cause, propose a rollback to the previous version. Do not raise the memory limit as a fix; it only delays the next crash.
+
+Step 5. Capture evidence for the postmortem. Take a heap dump from one pod (jcmd <pid> GC.heap_dump) before it restarts, and note the cache size and hit ratio from the logs.

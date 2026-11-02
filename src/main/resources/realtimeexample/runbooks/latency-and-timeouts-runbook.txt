@@ -1,0 +1,13 @@
+RUNBOOK: High latency and downstream timeouts
+
+Applies when: p99 latency is above the SLO (500 ms for pricing, 800 ms for checkout), or callers log timeouts.
+
+Step 1. Find the slowest service in the chain. If checkout logs timeouts calling pricing, investigate pricing first; checkout is a victim, not the cause.
+
+Step 2. Check pod health. Fewer ready pods than desired means the remaining pods take all the traffic and latency climbs for everyone. Restarting pods also lose their warm caches and JIT state.
+
+Step 3. Check garbage collection. A heap above 90 percent causes long GC pauses, which show up as latency spikes before any OutOfMemoryError.
+
+Step 4. Protect the caller. Confirm the caller's circuit breaker (Resilience4j) is open for the failing service so threads are not stuck waiting on timeouts.
+
+Step 5. Customer impact. Checkout timeouts mean customers cannot place orders. Tell the support team and post a status update every 30 minutes.
