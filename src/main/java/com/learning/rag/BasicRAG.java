@@ -48,7 +48,7 @@ public class BasicRAG {
             iox.printStackTrace();
         }
 
-        ChatMemory memory = MessageWindowChatMemory.withMaxMessages(10);    // Lab: convert this pgm to AiService
+        ChatMemory memory = MessageWindowChatMemory.withMaxMessages(10);
 
         ChatModel cmodel = GoogleAiGeminiChatModel.builder()
                 .apiKey(AppConfig.getApiKey())
