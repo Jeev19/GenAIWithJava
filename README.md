@@ -18,7 +18,7 @@ No Spring, no framework magic. Every example is a single runnable class with a `
 
 ## Tech stack
 
-- Java 25
+- Java 21
 - LangChain4j 1.22.0 (`langchain4j`, `langchain4j-google-ai-gemini`)
 - Google Gemini for chat and embeddings
 - Maven, Lombok, SLF4J
@@ -27,7 +27,7 @@ No Spring, no framework magic. Every example is a single runnable class with a `
 
 ### Prerequisites
 
-- JDK 25
+- JDK 21 (or newer)
 - Maven 3.9+
 - A Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
 
@@ -196,6 +196,81 @@ sequenceDiagram
     A-->>U: UA1011 is in the air...
 ```
 
+## Capstone: On-Call Copilot (`com.learning.realtimeexample`)
+
+One realistic app that uses everything above. It's the night of a big festive sale, `order-pricing-service` pods keep getting OOMKilled, and checkout is timing out. You're on call. The copilot reads the team's runbooks, checks live health, logs and deployments through tools, recognises a similar past incident, proposes a rollback that only you can approve, and writes the stakeholder update.
+
+```mermaid
+flowchart LR
+    ENG["On-call engineer"] -->|"questions, /update, /approve"| APP["OnCallCopilotApp<br/>console loop"]
+    APP --> ASSIST["OnCallAssistant<br/>AiServices + streaming"]
+    APP --> WRITER["StatusUpdateWriter<br/>PromptTemplate + ChatModel"]
+    ASSIST --> MEM["ChatMemory<br/>one per incident"]
+    WRITER -->|"reads transcript"| MEM
+    ASSIST -->|"RAG"| RB["RunbookLibrary<br/>runbook vectors"]
+    ASSIST -->|"tool calls"| TOOLS["OpsTools<br/>@Tool methods"]
+    TOOLS --> GW["OpsGateway<br/>health, logs, deploys"]
+    TOOLS --> HIST["IncidentHistory<br/>cosine similarity"]
+    ASSIST --> GEM[("Gemini")]
+    WRITER --> GEM
+```
+
+| Concept from the tutorial | Where it shows up in the capstone |
+|---|---|
+| ChatModel, system and user messages | `StatusUpdateWriter` calls the model directly with a `SystemMessage` and a `UserMessage` |
+| Prompt templates | The status update prompt is a `PromptTemplate` with incident, audience and transcript variables |
+| Context stuffing | The whole incident conversation goes into the status update prompt |
+| Chat memory | `chatMemoryProvider` with `@MemoryId`, so every incident gets its own memory |
+| AI Services and streaming | `OnCallAssistant` is an interface that returns a `TokenStream` |
+| Embeddings | `IncidentHistory` embeds past incidents once and ranks them with cosine similarity |
+| RAG | `RunbookLibrary` ingests the runbooks and plugs a `ContentRetriever` into the assistant |
+| Tools | `OpsTools` exposes health, logs, deployments, similar incidents and rollback proposals |
+
+The capstone also applies a few production habits that the earlier, smaller examples skip:
+
+- **Models are built in one place** (`ModelFactory`), and missing config fails at startup with a clear message.
+- **Tools depend on an interface** (`OpsGateway`). The demo uses fake data, and swapping in real Kubernetes or Prometheus clients, or a Mockito mock in a test, doesn't touch the tools.
+- **Tools never throw.** Errors come back as text the model can read and recover from.
+- **The AI can't take destructive actions on its own.** `proposeRollback` only records a proposal, and a human has to type `/approve`.
+- **Ingestion is batched** with `embedAll` and recursive splitting, instead of one API call per line.
+
+### Configure and run
+
+Add these to `application.properties` (all but the first are optional; these are the defaults):
+
+```properties
+embedding-model=gemini-embedding-001
+embedding.dimensions=768
+llm.timeout.seconds=60
+realtimeexample.rag.max-results=4
+realtimeexample.rag.min-score=0.6
+```
+
+```bash
+mvn compile exec:java -Dexec.mainClass=com.learning.realtimeexample.OnCallCopilotApp
+```
+
+### A session to try
+
+```
+oncall> /incident order-pricing-service
+INC-4101> Pricing pods keep restarting and checkout is timing out. What's going on?
+  [runbooks] jvm-memory-runbook.txt, latency-and-timeouts-runbook.txt
+  [tool] getServiceHealth {"service":"order-pricing-service"}
+  [tool] getRecentErrors {"service":"order-pricing-service","limit":10}
+  [tool] getRecentDeployments {"service":"order-pricing-service"}
+  [tool] findSimilarIncidents {"symptoms":"heap growing after cache release, pods OOMKilled"}
+Findings: ... (streams in)
+INC-4101> Should we roll back?
+>> Rollback proposed: order-pricing-service to v2.13.2 (...). Type /approve to execute.
+INC-4101> /approve
+INC-4101> Is it recovering?
+INC-4101> /update leadership
+INC-4101> /update customer support
+```
+
+The second and third questions only make sense because of memory, since "it" and "roll back" refer back to the first answer. Try `/incident cart-service` afterwards to see that a new incident starts with a clean memory.
+
 ## Project structure
 
 ```
@@ -205,16 +280,27 @@ src/main/java/com/learning
 ├── embedding/       # embeddings and cosine similarity
 ├── rag/             # manual RAG and AiServices RAG
 ├── tools/           # @Tool function calling
+├── realtimeexample/ # On-Call Copilot capstone, everything combined
+│   ├── config/      # ModelFactory
+│   ├── knowledge/   # RunbookLibrary (RAG), IncidentHistory (embeddings)
+│   ├── ops/         # OpsGateway interface + fake implementation
+│   ├── tools/       # OpsTools
+│   ├── assistant/   # OnCallAssistant (AI Service)
+│   └── report/      # StatusUpdateWriter
 └── utils/AppConfig  # loads application.properties, API key fallback
 src/main/resources
 ├── application.properties
 ├── the-midnight-heap.txt
-└── paris-tour-guide.txt
+├── paris-tour-guide.txt
+└── realtimeexample/
+    ├── runbooks/            # JVM memory, latency, rollback runbooks
+    └── past-incidents.txt
+docs/diagrams/               # PNG versions of every diagram, for articles
 ```
 
 ## Suggested learning path
 
-`BasicChatModel` → `DIfferentChatMessages` → `Templates` → `ChatWithoutMemory` → `ChatWithMemory` → `ChatWithFileInContext` → `ChatWithAiService` → `ChatStreamingService` → `EmbeddingBasics` → `EmbeddingsComparision` → `BasicRAG` → `RAGUsingAiService` → `FlightInfo`
+`BasicChatModel` → `DIfferentChatMessages` → `Templates` → `ChatWithoutMemory` → `ChatWithMemory` → `ChatWithFileInContext` → `ChatWithAiService` → `ChatStreamingService` → `EmbeddingBasics` → `EmbeddingsComparision` → `BasicRAG` → `RAGUsingAiService` → `FlightInfo` → `OnCallCopilotApp`
 
 ## Notes
 

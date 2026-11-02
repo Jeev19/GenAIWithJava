@@ -33,7 +33,7 @@ public class RAGUsingAiService {
     }
 
     public static void main(String[] args) throws IOException {
-        ChatMemory memory = MessageWindowChatMemory.withMaxMessages(10);    // Lab: convert this pgm to AiService
+        ChatMemory memory = MessageWindowChatMemory.withMaxMessages(10);
 
         InMemoryEmbeddingStore<TextSegment> myDB = new InMemoryEmbeddingStore<>();
 
